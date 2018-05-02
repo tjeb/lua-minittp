@@ -1,0 +1,4 @@
+#!/usr/bin/env lua
+
+mts = require 'minittp'
+mts.run()
