@@ -33,6 +33,22 @@ function vprint(msg)
     if verbose then print(msg:trim()) end
 end
 
+local function store_pid()
+  local f = io.open("/proc/self/stat")
+  if f then
+    local pid = f:read("*line"):match("^([0-9]+)")
+    f:close()
+    vprint("Running with PID " .. pid)
+    local f_out, err = io.open("/var/minittp-server.pid", "w")
+    if f_out then
+      f_out:write(pid)
+      f_out:close()
+    else
+        vprint("Warning: unable to write pid file " .. err)
+    end
+  end
+end
+
 --
 -- CLI functions
 --
@@ -41,8 +57,9 @@ function help(rcode, msg)
 
     print("Usage: minihttp.lua <handler script> [options]")
     print("Options:")
-    print("-p <port number> The port number to listen on, defaults to 8080")
     print("-a <host ip> IP address to listen on, defaults to 127.0.0.1")
+    print("-p <port number> The port number to listen on, defaults to 8080")
+    print("-i store the process id in /var/minittp-server.pid (if it can be written to)")
     print("-v verbose output")
     print("-s <handler options> Treat the rest of the command line as arguments for the handler (passed as a single string to its init() function")
     --print("-a <address>")
@@ -51,6 +68,7 @@ function help(rcode, msg)
 end
 
 function parse_args(args)
+    local store_process_id = false
     local script_to_run = nil
     local port = 8080
     local host = "127.0.0.1"
@@ -59,24 +77,26 @@ function parse_args(args)
     for i = 1,table.getn(args) do
         if skip then
             skip = false
-        elseif args[i] == "-h" then
-            help()
         elseif args[i] == "-a" then
             host = args[i+1]
             if host == nil then help(1, "missing argument for -a") end
             skip = true
+        elseif args[i] == "-h" then
+            help()
+        elseif args[i] == "-i" then
+            store_process_id = true
         elseif args[i] == "-p" then
             port = args[i+1]
             if port == nil then help(1, "missing argument for -p") end
             skip = true
-        elseif args[i] == "-v" then
-            verbose = true
         elseif args[i] == "-s" then
             script_args = {}
             for j = i+1,table.getn(args) do
                 table.insert(script_args, arg[j])
             end
             break
+        elseif args[i] == "-v" then
+            verbose = true
         else
             if script_to_run == nil then script_to_run = args[i]
             else help(1, "Too many arguments at " .. table.getn(args))
@@ -86,7 +106,7 @@ function parse_args(args)
     if script_to_run == nil then
         help(1, "Missing arguments")
     end
-    return script_to_run, host, port, script_args
+    return store_process_id, script_to_run, host, port, script_args
 end
 
 function get_time_string()
@@ -135,10 +155,14 @@ end
 
 function run()
     -- Load the handler script and call its initialization
-    script_to_run, host, port, script_args = parse_args(arg)
+    store_process_id, script_to_run, host, port, script_args = parse_args(arg)
     script = dofile(script_to_run)
+
+    -- initial setup, load templates, etc.
+    if store_process_id then store_pid() end
+
     local r, err = script:init(script_args)
-    if r == nil then
+    if r == nil and err ~= nil then
         print("Error initializing handler: " .. err)
         return nil, err
     end
@@ -149,7 +173,7 @@ function run()
     i, p   = s:getsockname()
     assert(i, p)
     vprint("Waiting connection from client on " .. i .. ":" .. p .. "...")
-    
+
     -- fire it up
     copas.addserver(s, handle_connection)
     copas.loop()
