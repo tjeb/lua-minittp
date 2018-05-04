@@ -28,6 +28,19 @@ function mio.split_cmd(command)
   return cmd, args
 end
 
+function mio.read_fd_bytes(fd, size, timeout)
+  if fd == nil then
+    return nil, "Read on closed file"
+  end
+  if timeout == nil then timeout = 500 end
+  local pr, err = posix.rpoll(fd, timeout)
+  if pr == nil then return nil, err end
+  if pr == 0 then
+    return nil, "read timed out"
+  end
+  return posix.read(fd, size);
+end
+
 -- read a line from the given file descriptor
 function mio.read_fd_line(fd, strip_newline, timeout)
   if fd == nil then
@@ -152,6 +165,16 @@ function subprocess:start()
   self.pid, self.stdin, self.stdout, self.stderr = mio.popen3(self.path, self.args, self.delay, self.pipe_stdout, self.pipe_stderr, self.pipe_stdin)
   -- todo: error?
   return self
+end
+
+-- Read up to size bytes from subprocess
+-- may return less if less are available
+function subprocess:read_bytes(size, timeout)
+  if self.pid == nil then
+    return nil, "read_bytes() from stopped child process"
+  end
+  local result, err, code = mio.read_fd_bytes(self.stdout, size, timeout)
+  return result, err, code
 end
 
 function subprocess:read_line(strip_newline, timeout)
