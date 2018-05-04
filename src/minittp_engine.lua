@@ -173,8 +173,6 @@ function request.create(connection)
     local parts = line:split(" ")
     if parts[1] == "GET" then
         vprint("r: " .. line)
-        r.client_address = connection:getpeername()
-        vprint("Peer: " .. r.client_address)
         r.query = parts[2]
         r.path, r.params, err = parse_query(r.query)
         if r.path == nil then return nil, err end
@@ -182,6 +180,17 @@ function request.create(connection)
         local headers, err = request.parse_headers(connection)
         if headers == nil then return nil, err end
         r.headers = headers
+
+        -- If we are behind a proxy, assume X-Forwarded-For has been set
+        -- if not, use the peer name of the socket
+        -- (question/TODO: should we do the same for the other X-Forwarded options?)
+        if headers['X-Forwarded-For'] then
+            r.client_address = headers['X-Forwarded-For']
+        else
+            r.client_address = connection:getpeername()
+        end
+        vprint("Peer: " .. r.client_address)
+
     else
         return nil, "Unsupported command: " .. line
     end
