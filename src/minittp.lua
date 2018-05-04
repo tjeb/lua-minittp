@@ -134,23 +134,31 @@ end
 function handle_connection(c)
     c = copas.wrap(c)
     copas.setErrorHandler(errorhandle)
-    request, err = mt_engine.create_request(c)
-    if request == nil then print("Client error: " .. err)
-        -- TODO: send bad request response
-    else
-        -- Create a default response object
-        local response = mt_engine.create_response(c)
-        vprint("Calling request handler from script")
-        response = script:handle_request(request, response)
-        if response ~= nil then
-            response:send_status()
-            response:send_headers()
-            response:send_content()
+    local keepalive = true
+    while keepalive do
+        request, err = mt_engine.create_request(c)
+        if request == nil then print("Client error: " .. err)
+            -- TODO: send bad request response
+            if err == "closed" then keepalive = false end
+        else
+            -- Create a default response object
+            local response = mt_engine.create_response(c, request)
+            vprint("Calling request handler from script")
+            response = script:handle_request(request, response)
+            if response ~= nil then
+                response:send_status()
+                response:send_headers()
+                response:send_content()
+            end
+            if response == nil or not response.keepalive then
+                -- read another request
+                keepalive = false
+            end
         end
-        -- TODO check if closed, and whether it SHOULD be closed,
-        -- and/or we should read another request
-        c:close()
     end
+    -- if the client did not close, we will
+    -- if this errors, ignore it.
+    pcall(c.close, c)
 end
 
 function run()

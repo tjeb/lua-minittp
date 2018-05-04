@@ -19,15 +19,28 @@ local response = {}
 response.__index = response
 
 -- should probably pass request here too (some headers need to be copied)
-function response.create(connection)
+-- if request is given, take some header values from that
+function response.create(connection, request)
     local r = {}
     setmetatable(r, response)
     r.headers = response.create_standard_headers()
     r.content = nil
     r.status_code = 200
     r.status_description = "OK"
-    r.http_version = "HTTP/1.1"
     r.connection = connection
+
+    if request ~= nil then
+        r.keepalive = request.keepalive
+        r.http_version = request.http_version
+
+        -- update the standard headers we will send
+        if r.keepalive then
+            r.headers["Connection"] = "keep-alive"
+        end
+    else
+        r.keepalive = false
+        r.http_version = "HTTP/1.1"
+    end
 
     return r
 end
@@ -54,7 +67,7 @@ function response:set_status(code, description)
 end
 
 function response:create_status_line()
-    return self.http_version .. " " .. self.status_code .. " " .. self.status_description
+    return self.http_version .. " " .. self.status_code .. " " .. self.status_description .. "\r\n"
 end
 
 -- Send the status response line. Returns number of bytes sent
@@ -89,7 +102,7 @@ function response:send_headers()
             count = count + 1
         end
         -- marker for headers->content
-        sent, err = send_data(self.connection, "\n")
+        sent, err = send_data(self.connection, "\r\n")
         if sent == nil then return nil, err end
         self.headers = nil
     end
@@ -181,10 +194,20 @@ function request.create(connection)
         if headers == nil then return nil, err end
         r.headers = headers
 
+        -- specific header parsing
+        local header_connection = headers['Connection']
+        if header_connection ~= nil then
+            if header_connection == 'keep-alive' then
+                r.keepalive = true
+            else
+                r.keepalive = false
+            end
+        end
+
         -- If we are behind a proxy, assume X-Forwarded-For has been set
         -- if not, use the peer name of the socket
         -- (question/TODO: should we do the same for the other X-Forwarded options?)
-        if headers['X-Forwarded-For'] then
+        if headers['X-Forwarded-For'] ~= nil then
             r.client_address = headers['X-Forwarded-For']
         else
             r.client_address = connection:getpeername()
