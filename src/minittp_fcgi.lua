@@ -2,6 +2,9 @@
 
 -- FCGI runner for minittp
 
+local mt_engine = require 'minittp_engine'
+
+
 local _M = {}
 
 local fcgi_type_str = {
@@ -203,7 +206,7 @@ function read_fcgi_records(f)
     end
 end
 
-function create_cwrap(c)
+function ocreate_cwrap(c)
     local cw = {}
     cw.c = c
 
@@ -217,6 +220,31 @@ function create_cwrap(c)
         print("[XX] sending: " .. ds)
         c:send(d)
     end
+    return cw
+end
+
+-- this wraps one send() call into a FCGI stdout message
+function create_cwrap(c)
+    local cw = {}
+    cw.c = c
+
+    function cw:send(d)
+        local i = 1
+        local ds = ""
+        while(i <= d:len()) do
+            ds = ds .. " " .. string.byte(d, i) .. "(" .. string.sub(d, i,i) .. ")"
+            i = i + 1
+        end
+        print("[XX] sending: " .. ds)
+
+
+        local fresp = create_fcgi_stdout_record(d)
+        print("[XX] SENDING FCGI RECORD: ")
+        fresp:print()
+        fresp:write_record(c)
+        return d:len()
+    end
+
     return cw
 end
 
@@ -245,7 +273,7 @@ function handle_fcgi_request(f, handler)
     end
 
     -- this should be converted to a Request object
-    print(fp.params.REQUEST_METHOD .. " " .. fp.params.REQUEST_SCHEME .. "://" .. fp.params.HTTP_HOST .. port_str .. fp.params.PATH_INFO .. " " .. fp.params.SERVER_PROTOCOL)
+    print(fp.params.REQUEST_METHOD .. " " .. fp.params.REQUEST_SCHEME .. "://" .. fp.params.HTTP_HOST .. port_str .. fp.params.REQUEST_URI .. " " .. fp.params.SERVER_PROTOCOL)
 
     print("Host: " .. fp.params.HTTP_HOST)
     print("User-Agent: " .. fp.params.HTTP_USER_AGENT)
@@ -254,28 +282,65 @@ function handle_fcgi_request(f, handler)
     if fp.params.HTTP_REFERER then
         print("Referer: " .. fp.params.HTTP_REFERER)
     end
-    print("Content-Length: " .. fp.params.CONTENT_LENGTH)
-    print("Cache-Control: " .. fp.params.HTTP_CACHE_CONTROL)
+    if fp.params.CONTENT_LENGTH and tonumber(fp.params.CONTENT_LENGTH) > 0 then
+        print("Content-Length: " .. fp.params.CONTENT_LENGTH)
+    end
+    if fp.params.HTTP_CACHE_CONTROL then
+        print("Cache-Control: " .. fp.params.HTTP_CACHE_CONTROL)
+    end
     print("")
 
+    local request = mt_engine.create_request()
+    request.query = fp.params.REQUEST_SCHEME .. "://" .. fp.params.HTTP_HOST .. port_str .. fp.params.REQUEST_URI
+    request.http_version = fp.params.SERVER_PROTOCOL
+
+    request.path = fp.params.SCRIPT_NAME
+
+    if fp.params.QUERY_STRING then
+        local param_parts = fp.params.QUERY_STRING:split("&")
+        params = {}
+        for i,p in pairs(param_parts) do
+            local pv = p:split("=")
+            if #pv == 2 then
+                params[pv[1]] = pv[2]
+            end
+        end
+        request.params = params
+    end
+
+    request.client_address = fp.params.REMOTE_ADDR
+
+    request.headers = {}
+    -- heeey can we derive these from HTTP_?
+    request.headers['Host'] = fp.params.HTTP_HOST
+    request.headers['User-Agent'] = fp.params.HTTP_USER_AGENT
+    request.headers['X-Forwarded-For'] = fp.params.REMOTE_ADDR
+    request.headers['Accept-Encoding'] = fp.params.HTTP_ACCEPT_ENCODING
+    if fp.params.HTTP_REFERER then
+        request.headers['Referer'] = fp.params.HTTP_REFERER
+    end
+    if fp.params.CONTENT_LENGTH and tonumber(fp.params.CONTENT_LENGTH) > 0 then
+        request.headers['Content-Length'] = fp.params.CONTENT_LENGTH
+    end
+    if fp.params.HTTP_CACHE_CONTROL then
+        request.headers['Cache-Control'] = fp.params.HTTP_CACHE_CONTROL
+    end
+
     -- if the handler sends its own data, we need to make sure the right calls are wrapped into fcgi structures
+    local c_wrap = create_cwrap(f)
+    local response = mt_engine.create_response(c_wrap, request)
 
     -- call the handler
+    response = handler:handle_request(request, response)
 
     -- and send the response if not done yet
+    if response ~= nil then
+        response:send_status()
+        response:send_headers()
+        response:send_content()
+    end
 
     -- depending on params of fcgi server, we may need to keep the connection open
-
-    -- the response
-    local fresp = create_fcgi_stdout_record("X-Foo: bar\r\n\r\ndata\r\n")
-    print("[XX] SENDING: ")
-    fresp:print()
-    fresp:write_record(create_cwrap(f))
-
-    fresp = create_fcgi_stdout_record("")
-    print("[XX] SENDING: ")
-    fresp:print()
-    fresp:write_record(f)
 
     -- end request
     fresp = create_fcgi_record(fcgi_types.FCGI_END_REQUEST)

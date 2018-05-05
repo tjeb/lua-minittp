@@ -148,7 +148,7 @@ function handle_connection(c)
     copas.setErrorHandler(errorhandle)
     local keepalive = true
     while keepalive do
-        request, err = mt_engine.create_request(c)
+        request, err = mt_engine.create_request_from_connection(c)
         if request == nil then print("Client error: " .. err)
             -- TODO: send bad request response
             if err == "closed" then keepalive = false end
@@ -175,7 +175,7 @@ end
 
 function handle_fastcgi(c)
     -- parse the fcgi request into a request object
-    local result, err = mt_fcgi.handle_fcgi_request(c)
+    local result, err = mt_fcgi.handle_fcgi_request(c, script)
     -- call the script; should we wrap the socket or the
     -- send_X calls?
     copas.sleep(0.1)

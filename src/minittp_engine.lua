@@ -154,11 +154,11 @@ request.__index = request
 -- TODO
 --
 
-function parse_query(query)
-    local path = query
+function request:parse_query()
+    local path = self.query
     local params = nil
 
-    local parts = query:split("?")
+    local parts = self.query:split("?")
     if #parts > 2 then
         return nil, "Bad query"
     elseif #parts > 1 then
@@ -176,9 +176,22 @@ function parse_query(query)
     return path, params
 end
 
+
+
 function request.create(connection)
     local r = {}
+    setmetatable(r, request)
     r.connection = connection
+    r.query = ""
+    r.headers = {}
+    return r
+end
+mte_M.create_request = request.create
+
+function request.create_from_connection(connection)
+    local r = request.create()
+    r.connection = connection
+
     -- first line must be a GET (for now)
     local line, err = connection:receive()
     if line == nil then return nil, err end
@@ -187,7 +200,7 @@ function request.create(connection)
     if parts[1] == "GET" then
         vprint("r: " .. line)
         r.query = parts[2]
-        r.path, r.params, err = parse_query(r.query)
+        r.path, r.params, err = self:parse_query()
         if r.path == nil then return nil, err end
         r.http_version = parts[3]
         local headers, err = request.parse_headers(connection)
@@ -219,7 +232,7 @@ function request.create(connection)
     end
     return r
 end
-mte_M.create_request = request.create
+mte_M.create_request_from_connection = request.create_from_connection
 
 function request.parse_headers(connection)
     local header_count = 0
