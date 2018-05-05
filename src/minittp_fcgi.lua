@@ -47,24 +47,76 @@ local fcgi_roles = {
 local fcgi_record = {}
 fcgi_record.__index = fcgi_record
 
+function receive_int16(c)
+    return 256*string.byte(c:receive(1)) + string.byte(c:receive(1))
+end
+
+function send_int16(c, value)
+    if value > 65535 then error("Value too large for 16 bits: " .. value) end
+    local b1 = math.modf(value / 256)
+    print("[XX] b1: " ..b1)
+    local b2 = math.modf(value % 256)
+    print("[XX] b2: " ..b2)
+    c:send(string.char(b1))
+    c:send(string.char(b2))
+end
+
 function read_fcgi_record(c)
     local fr = {}
     setmetatable(fr, fcgi_record)
-    local b = c:read(1)
+    local b = c:receive(1)
     if b == nil then return nil end
     fr.version = string.byte(b)
-    fr.type = string.byte(c:read(1))
-    fr.requestId = 256*string.byte(c:read(1)) + string.byte(c:read(1))
-    fr.contentLength = 256 * string.byte(c:read(1)) +string.byte(c:read(1))
-    fr.paddingLength = string.byte(c:read(1))
-    fr.reserved = string.byte(c:read(1))
+    fr.type = string.byte(c:receive(1))
+    fr.requestId = 256*string.byte(c:receive(1)) + string.byte(c:receive(1))
+    fr.contentLength = 256 * string.byte(c:receive(1)) +string.byte(c:receive(1))
+    fr.paddingLength = string.byte(c:receive(1))
+    fr.reserved = string.byte(c:receive(1))
     if fr.contentLength > 0 then
-        fr.contentData = c:read(fr.contentLength)
+        fr.contentData = c:receive(fr.contentLength)
     end
     if fr.paddingLength > 0 then
-        fr.paddingData = c:read(fr.paddingLength)
+        fr.paddingData = c:receive(fr.paddingLength)
     end
     return fr
+end
+
+function create_fcgi_record(record_type)
+    local fr = {}
+    setmetatable(fr, fcgi_record)
+
+    fr.version = 1
+    fr.type = record_type
+    fr.requestId = 1
+    fr.contentLength = 0
+    fr.paddingLength = 0
+    fr.reserved = 0
+
+    return fr
+end
+
+function create_fcgi_stdout_record(data)
+    local fr = create_fcgi_record(fcgi_types.FCGI_STDOUT)
+    if data ~= nil and data:len() > 0 then
+        fr.contentLength = data:len()
+        fr.contentData = data
+    end
+    return fr
+end
+
+function fcgi_record:write_record(c)
+    c:send(string.char(self.version))
+    c:send(string.char(self.type))
+    send_int16(c, self.requestId)
+    send_int16(c, self.contentLength)
+    c:send(string.char(self.paddingLength))
+    c:send(string.char(self.reserved))
+    if self.contentLength > 0 then
+        c:send(self.contentData)
+    end
+    if self.paddingLength > 0 then
+        c:send(self.paddingData)
+    end
 end
 
 function fcgi_record:print()
@@ -151,12 +203,31 @@ function read_fcgi_records(f)
     end
 end
 
-function handle_fcgi_request(f)
+function create_cwrap(c)
+    local cw = {}
+    cw.c = c
+
+    function cw:send(d)
+        local i = 1
+        local ds = ""
+        while(i <= d:len()) do
+            ds = ds .. " " .. string.byte(d, i) .. "(" .. string.sub(d, i,i) .. ")"
+            i = i + 1
+        end
+        print("[XX] sending: " .. ds)
+        c:send(d)
+    end
+    return cw
+end
+
+function handle_fcgi_request(f, handler)
     -- should start with BEGIN_REQUEST
 
     -- maybe add 'read_begin_request, read_params' straight from f/c?
     local fr = read_fcgi_record(f)
+    -- we should try again. did we have a reliable read somewhere?
     if fr == nil then return nil, "Bad FCGI request, no data" end
+    fr:print()
     if fr.type ~= fcgi_types.FCGI_BEGIN_REQUEST then
         return nil, "Bad FCGI request: does not start with FCGI_REQUEST"
     end
@@ -173,18 +244,49 @@ function handle_fcgi_request(f)
         port_str = ":" .. port
     end
 
+    -- this should be converted to a Request object
     print(fp.params.REQUEST_METHOD .. " " .. fp.params.REQUEST_SCHEME .. "://" .. fp.params.HTTP_HOST .. port_str .. fp.params.PATH_INFO .. " " .. fp.params.SERVER_PROTOCOL)
 
     print("Host: " .. fp.params.HTTP_HOST)
     print("User-Agent: " .. fp.params.HTTP_USER_AGENT)
     print("X-Forwarded-For: " .. fp.params.REMOTE_ADDR)
     print("Accept-Encoding: " .. fp.params.HTTP_ACCEPT_ENCODING)
-    print("Referer: " .. fp.params.HTTP_REFERER)
+    if fp.params.HTTP_REFERER then
+        print("Referer: " .. fp.params.HTTP_REFERER)
+    end
     print("Content-Length: " .. fp.params.CONTENT_LENGTH)
     print("Cache-Control: " .. fp.params.HTTP_CACHE_CONTROL)
     print("")
 
-    return fp
+    -- if the handler sends its own data, we need to make sure the right calls are wrapped into fcgi structures
+
+    -- call the handler
+
+    -- and send the response if not done yet
+
+    -- depending on params of fcgi server, we may need to keep the connection open
+
+    -- the response
+    local fresp = create_fcgi_stdout_record("X-Foo: bar\r\n\r\ndata\r\n")
+    print("[XX] SENDING: ")
+    fresp:print()
+    fresp:write_record(create_cwrap(f))
+
+    fresp = create_fcgi_stdout_record("")
+    print("[XX] SENDING: ")
+    fresp:print()
+    fresp:write_record(f)
+
+    -- end request
+    fresp = create_fcgi_record(fcgi_types.FCGI_END_REQUEST)
+    fresp.contentLength = 2
+    fresp.contentData = "\0\0"
+    --print("[XX] LEN: " .. fresp.contentData:len())
+    print("[XX] SENDING: ")
+    fresp:print()
+    fresp:write_record(f)
+
+    return true
 end
 _M.handle_fcgi_request = handle_fcgi_request
 
