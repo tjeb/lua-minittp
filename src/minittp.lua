@@ -26,6 +26,10 @@ local socket = require 'socket'
 local mtu = require 'minittp_util'
 local mt_engine = require 'minittp_engine'
 
+local mt_fcgi = require 'minittp_fcgi'
+
+local signal = require 'posix.signal'
+
 local minittp = {}
 verbose = false
 
@@ -49,6 +53,10 @@ local function store_pid()
   end
 end
 
+local function remove_pid()
+    pcall(os.remove, "/var/minittp-server.pid")
+end
+
 --
 -- CLI functions
 --
@@ -59,6 +67,7 @@ function help(rcode, msg)
     print("Options:")
     print("-a <host ip> IP address to listen on, defaults to 127.0.0.1")
     print("-p <port number> The port number to listen on, defaults to 8080")
+    print("-f Run in FastCGI mode")
     print("-i store the process id in /var/minittp-server.pid (if it can be written to)")
     print("-v verbose output")
     print("-s <handler options> Treat the rest of the command line as arguments for the handler (passed as a single string to its init() function")
@@ -69,6 +78,7 @@ end
 
 function parse_args(args)
     local store_process_id = false
+    local fastcgi = false
     local script_to_run = nil
     local port = 8080
     local host = "127.0.0.1"
@@ -81,6 +91,8 @@ function parse_args(args)
             host = args[i+1]
             if host == nil then help(1, "missing argument for -a") end
             skip = true
+        elseif args[i] == "-f" then
+            fastcgi = true
         elseif args[i] == "-h" then
             help()
         elseif args[i] == "-i" then
@@ -106,7 +118,7 @@ function parse_args(args)
     if script_to_run == nil then
         help(1, "Missing arguments")
     end
-    return store_process_id, script_to_run, host, port, script_args
+    return store_process_id, fastcgi, script_to_run, host, port, script_args
 end
 
 function get_time_string()
@@ -136,7 +148,7 @@ function handle_connection(c)
     copas.setErrorHandler(errorhandle)
     local keepalive = true
     while keepalive do
-        request, err = mt_engine.create_request(c)
+        request, err = mt_engine.create_request_from_connection(c)
         if request == nil then print("Client error: " .. err)
             -- TODO: send bad request response
             if err == "closed" then keepalive = false end
@@ -161,13 +173,19 @@ function handle_connection(c)
     pcall(c.close, c)
 end
 
+function handle_fastcgi(c)
+    local count = 1
+    local result = nil
+    local err = nil
+
+    result, err = mt_fcgi.handle_fcgi_request(c, script)
+    if result == nil then print("[XX] error in fcgi (attempt ".. count .. "): " .. err) end
+end
+
 function run()
     -- Load the handler script and call its initialization
-    store_process_id, script_to_run, host, port, script_args = parse_args(arg)
+    store_process_id, fastcgi, script_to_run, host, port, script_args = parse_args(arg)
     script = dofile(script_to_run)
-
-    -- initial setup, load templates, etc.
-    if store_process_id then store_pid() end
 
     local r, err = script:init(script_args)
     if r == nil and err ~= nil then
@@ -183,9 +201,20 @@ function run()
     vprint("Waiting connection from client on " .. i .. ":" .. p .. "...")
 
     -- fire it up
-    copas.addserver(s, handle_connection)
+    if fastcgi then
+        copas.addserver(s, handle_fastcgi)
+    else
+        copas.addserver(s, handle_connection)
+    end
+
+    -- initial setup, load templates, etc.
+    if store_process_id then
+        store_pid()
+    end
+
     copas.loop()
 end
+
 minittp.run = run
 
 return minittp

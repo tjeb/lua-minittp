@@ -130,7 +130,7 @@ function handler:handle_request(request, response)
         end
     end
     response:set_status(404, "Not found")
-    response.content = "Not found"
+    response.content = "Not found: '" .. request_uri .. "'"
     return response
 end
 
