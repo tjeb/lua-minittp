@@ -174,13 +174,12 @@ function handle_connection(c)
 end
 
 function handle_fastcgi(c)
-    -- parse the fcgi request into a request object
-    local result, err = mt_fcgi.handle_fcgi_request(c, script)
-    -- call the script; should we wrap the socket or the
-    -- send_X calls?
-    copas.sleep(0.1)
+    local count = 1
+    local result = nil
+    local err = nil
 
-    if result == nil then print("[XX] error in fcgi: " .. err) end
+    result, err = mt_fcgi.handle_fcgi_request(c, script)
+    if result == nil then print("[XX] error in fcgi (attempt ".. count .. "): " .. err) end
 end
 
 function run()

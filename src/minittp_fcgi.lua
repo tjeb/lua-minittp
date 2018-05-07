@@ -3,7 +3,7 @@
 -- FCGI runner for minittp
 
 local mt_engine = require 'minittp_engine'
-
+local copas = require 'copas'
 
 local _M = {}
 
@@ -57,30 +57,64 @@ end
 function send_int16(c, value)
     if value > 65535 then error("Value too large for 16 bits: " .. value) end
     local b1 = math.modf(value / 256)
-    print("[XX] b1: " ..b1)
+    --print("[XX] b1: " ..b1)
     local b2 = math.modf(value % 256)
-    print("[XX] b2: " ..b2)
+    --print("[XX] b2: " ..b2)
     c:send(string.char(b1))
     c:send(string.char(b2))
 end
 
+function int16tos(value)
+    if value > 65535 then error("Value too large for 16 bits: " .. value) end
+    local b1 = math.modf(value / 256)
+    --print("[XX] b1: " ..b1)
+    local b2 = math.modf(value % 256)
+    --print("[XX] b2: " ..b2)
+    return string.char(b1) .. string.char(b2)
+end
+
 function read_fcgi_record(c)
+    local bs = nil
+    local count = 1
+    while bs == nil and count <= 10 do
+        bs = c:receive(8)
+        if bs == nil then copas.sleep(0.1) end
+        count = count + 1
+    end
+    if bs == nil then return nil, "Timeout reading fcgi record header" end
+
     local fr = {}
     setmetatable(fr, fcgi_record)
-    local b = c:receive(1)
-    if b == nil then return nil end
-    fr.version = string.byte(b)
-    fr.type = string.byte(c:receive(1))
-    fr.requestId = 256*string.byte(c:receive(1)) + string.byte(c:receive(1))
-    fr.contentLength = 256 * string.byte(c:receive(1)) +string.byte(c:receive(1))
-    fr.paddingLength = string.byte(c:receive(1))
-    fr.reserved = string.byte(c:receive(1))
+
+    fr.version = string.byte(bs, 1)
+    fr.type = string.byte(bs, 2)
+    fr.requestId = 256*string.byte(bs, 3) + string.byte(bs, 4)
+    fr.contentLength = 256 * string.byte(bs, 5) + string.byte(bs, 6)
+    fr.paddingLength = string.byte(bs, 7)
+    fr.reserved = string.byte(bs, 8)
+
     if fr.contentLength > 0 then
-        fr.contentData = c:receive(fr.contentLength)
+        fr.contentData = nil
+        count = 1
+        while fr.contentData == nil and count <= 10 do
+            fr.contentData = c:receive(fr.contentLength)
+            if fr.contentData == nil then copas.sleep(0.1) end
+            count = count + 1
+        end
+        if fr.contentData == nil then return nil, "Timeout reading fcgi content data" end
     end
     if fr.paddingLength > 0 then
-        fr.paddingData = c:receive(fr.paddingLength)
+        fr.paddingData = nil
+        count = 1
+        while fr.paddingData == nil and count <= 10 do
+            fr.paddingData = c:receive(fr.paddingLength)
+            if fr.paddingData == nil then copas.sleep(0.1) end
+            count = count + 1
+        end
+        if fr.paddingData == nil then return nil, "Timeout reading fcgi padding data" end
     end
+
+    fr:print()
     return fr
 end
 
@@ -108,19 +142,23 @@ function create_fcgi_stdout_record(data)
 end
 
 function fcgi_record:write_record(c)
-    c:send(string.char(self.version))
-    c:send(string.char(self.type))
-    send_int16(c, self.requestId)
-    send_int16(c, self.contentLength)
-    c:send(string.char(self.paddingLength))
-    c:send(string.char(self.reserved))
+    local header = string.char(self.version) ..
+                   string.char(self.type) ..
+                   int16tos(self.requestId) ..
+                   int16tos(self.contentLength) ..
+                   string.char(self.paddingLength) ..
+                   string.char(self.reserved)
+    c:send(header)
     if self.contentLength > 0 then
         c:send(self.contentData)
     end
     if self.paddingLength > 0 then
         c:send(self.paddingData)
     end
+
+    return true
 end
+
 
 function fcgi_record:print()
     print("FCGI_RECORD")
@@ -194,12 +232,12 @@ function read_fcgi_records(f)
     local fr = read_fcgi_record(f)
     if fr == nil then return nil end
     if fr.type == fcgi_types.FCGI_BEGIN_REQUEST then
-        print("[XX] it's begin request!")
+        --print("[XX] it's begin request!")
         local fbr = read_begin_request(fr)
-        fbr:print()
+        --fbr:print()
     elseif fr.type == fcgi_types.FCGI_PARAMS then
         local fp = read_params(fr)
-        fp:print()
+        --fp:print()
     else
         print("[XX] unknown type: " .. fcgi_type_str[fr.type])
         fr:print()
@@ -217,14 +255,14 @@ function ocreate_cwrap(c)
             ds = ds .. " " .. string.byte(d, i) .. "(" .. string.sub(d, i,i) .. ")"
             i = i + 1
         end
-        print("[XX] sending: " .. ds)
+        --print("[XX] sending: " .. ds)
         c:send(d)
     end
     return cw
 end
 
 -- this wraps one send() call into a FCGI stdout message
-function create_cwrap(c)
+function create_cwrap_debug(c)
     local cw = {}
     cw.c = c
 
@@ -235,12 +273,26 @@ function create_cwrap(c)
             ds = ds .. " " .. string.byte(d, i) .. "(" .. string.sub(d, i,i) .. ")"
             i = i + 1
         end
-        print("[XX] sending: " .. ds)
+        --print("[XX] sending: " .. ds)
 
 
         local fresp = create_fcgi_stdout_record(d)
         print("[XX] SENDING FCGI RECORD: ")
         fresp:print()
+        fresp:write_record(c)
+        return d:len()
+    end
+
+    return cw
+end
+
+-- this wraps one send() call into a FCGI stdout message
+function create_cwrap(c)
+    local cw = {}
+    cw.c = c
+
+    function cw:send(d)
+        local fresp = create_fcgi_stdout_record(d)
         fresp:write_record(c)
         return d:len()
     end
@@ -255,12 +307,12 @@ function handle_fcgi_request(f, handler)
     local fr = read_fcgi_record(f)
     -- we should try again. did we have a reliable read somewhere?
     if fr == nil then return nil, "Bad FCGI request, no data" end
-    fr:print()
+    --fr:print()
     if fr.type ~= fcgi_types.FCGI_BEGIN_REQUEST then
         return nil, "Bad FCGI request: does not start with FCGI_REQUEST"
     end
     local fp = read_params(read_fcgi_record(f))
-    fp:print()
+    --fp:print()
 
     -- convert to request
 
@@ -282,7 +334,7 @@ function handle_fcgi_request(f, handler)
     if fp.params.HTTP_REFERER then
         print("Referer: " .. fp.params.HTTP_REFERER)
     end
-    if fp.params.CONTENT_LENGTH and tonumber(fp.params.CONTENT_LENGTH) > 0 then
+    if fp.params.CONTENT_LENGTH and fp.params.CONTENT_LENGTH ~= "" and tonumber(fp.params.CONTENT_LENGTH) > 0 then
         print("Content-Length: " .. fp.params.CONTENT_LENGTH)
     end
     if fp.params.HTTP_CACHE_CONTROL then
@@ -319,7 +371,7 @@ function handle_fcgi_request(f, handler)
     if fp.params.HTTP_REFERER then
         request.headers['Referer'] = fp.params.HTTP_REFERER
     end
-    if fp.params.CONTENT_LENGTH and tonumber(fp.params.CONTENT_LENGTH) > 0 then
+    if fp.params.CONTENT_LENGTH and fp.params.CONTENT_LENGTH ~= "" and tonumber(fp.params.CONTENT_LENGTH) > 0 then
         request.headers['Content-Length'] = fp.params.CONTENT_LENGTH
     end
     if fp.params.HTTP_CACHE_CONTROL then
@@ -329,6 +381,13 @@ function handle_fcgi_request(f, handler)
     -- if the handler sends its own data, we need to make sure the right calls are wrapped into fcgi structures
     local c_wrap = create_cwrap(f)
     local response = mt_engine.create_response(c_wrap, request)
+
+    -- sending chunks is now a normal send of the wrapper;
+    -- no need to use the chunked transmission protocol ourselves
+    response.send_chunk = c_wrap.send
+
+    -- (we could make it more efficient by having the other standard send
+    -- calls wrapped as well, btw, but those need special handling)
 
     -- call the handler
     response = handler:handle_request(request, response)
@@ -345,12 +404,13 @@ function handle_fcgi_request(f, handler)
     -- end request
     fresp = create_fcgi_record(fcgi_types.FCGI_END_REQUEST)
     fresp.contentLength = 2
-    fresp.contentData = "\0\0"
+    fresp.contentData = string.char(0) .. string.char(0)
     --print("[XX] LEN: " .. fresp.contentData:len())
-    print("[XX] SENDING: ")
-    fresp:print()
+    --print("[XX] SENDING: ")
+    --fresp:print()
     fresp:write_record(f)
 
+    f:close()
     return true
 end
 _M.handle_fcgi_request = handle_fcgi_request
