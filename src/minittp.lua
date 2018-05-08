@@ -215,10 +215,6 @@ function run()
     copas.loop()
 end
 
-minittp.__gc = function()
-    print("[XX] EXIT!")
-end
-
 minittp.run = run
 
 return minittp

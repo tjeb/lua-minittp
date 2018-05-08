@@ -272,7 +272,6 @@ function handle_static_file(request, response, base_path)
         response.content = err
         return response
     end
-    print("[XX] FILE: " .. file_path .. " MIMETYPE: " .. mt_util.derive_mimetype(file_path))
     response:set_header("Content-Type", mt_util.derive_mimetype(file_path))
     response:set_header("Transfer-Encoding", "chunked")
     response:send_status()

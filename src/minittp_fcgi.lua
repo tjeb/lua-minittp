@@ -57,9 +57,7 @@ end
 function send_int16(c, value)
     if value > 65535 then error("Value too large for 16 bits: " .. value) end
     local b1 = math.modf(value / 256)
-    --print("[XX] b1: " ..b1)
     local b2 = math.modf(value % 256)
-    --print("[XX] b2: " ..b2)
     c:send(string.char(b1))
     c:send(string.char(b2))
 end
@@ -232,14 +230,13 @@ function read_fcgi_records(f)
     local fr = read_fcgi_record(f)
     if fr == nil then return nil end
     if fr.type == fcgi_types.FCGI_BEGIN_REQUEST then
-        --print("[XX] it's begin request!")
         local fbr = read_begin_request(fr)
         --fbr:print()
     elseif fr.type == fcgi_types.FCGI_PARAMS then
         local fp = read_params(fr)
         --fp:print()
     else
-        print("[XX] unknown type: " .. fcgi_type_str[fr.type])
+        print("[XX] unknown fcgi record type: " .. fcgi_type_str[fr.type])
         fr:print()
     end
 end
@@ -255,7 +252,6 @@ function ocreate_cwrap(c)
             ds = ds .. " " .. string.byte(d, i) .. "(" .. string.sub(d, i,i) .. ")"
             i = i + 1
         end
-        --print("[XX] sending: " .. ds)
         c:send(d)
     end
     return cw
@@ -273,12 +269,8 @@ function create_cwrap_debug(c)
             ds = ds .. " " .. string.byte(d, i) .. "(" .. string.sub(d, i,i) .. ")"
             i = i + 1
         end
-        --print("[XX] sending: " .. ds)
-
 
         local fresp = create_fcgi_stdout_record(d)
-        print("[XX] SENDING FCGI RECORD: ")
-        fresp:print()
         fresp:write_record(c)
         return d:len()
     end
@@ -307,12 +299,10 @@ function handle_fcgi_request(f, handler)
     local fr = read_fcgi_record(f)
     -- we should try again. did we have a reliable read somewhere?
     if fr == nil then return nil, "Bad FCGI request, no data" end
-    --fr:print()
     if fr.type ~= fcgi_types.FCGI_BEGIN_REQUEST then
         return nil, "Bad FCGI request: does not start with FCGI_REQUEST"
     end
     local fp = read_params(read_fcgi_record(f))
-    --fp:print()
 
     -- convert to request
 
@@ -342,6 +332,7 @@ function handle_fcgi_request(f, handler)
     end
     print("")
 
+    -- Convert the fastcgi data to a Request object
     local request = mt_engine.create_request()
     request.query = fp.params.REQUEST_SCHEME .. "://" .. fp.params.HTTP_HOST .. port_str .. fp.params.REQUEST_URI
     request.http_version = fp.params.SERVER_PROTOCOL
@@ -405,9 +396,6 @@ function handle_fcgi_request(f, handler)
     fresp = create_fcgi_record(fcgi_types.FCGI_END_REQUEST)
     fresp.contentLength = 2
     fresp.contentData = string.char(0) .. string.char(0)
-    --print("[XX] LEN: " .. fresp.contentData:len())
-    --print("[XX] SENDING: ")
-    --fresp:print()
     fresp:write_record(f)
 
     f:close()
