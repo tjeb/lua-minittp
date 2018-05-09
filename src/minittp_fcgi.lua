@@ -65,9 +65,7 @@ end
 function int16tos(value)
     if value > 65535 then error("Value too large for 16 bits: " .. value) end
     local b1 = math.modf(value / 256)
-    --print("[XX] b1: " ..b1)
     local b2 = math.modf(value % 256)
-    --print("[XX] b2: " ..b2)
     return string.char(b1) .. string.char(b2)
 end
 
@@ -112,7 +110,6 @@ function read_fcgi_record(c)
         if fr.paddingData == nil then return nil, "Timeout reading fcgi padding data" end
     end
 
-    fr:print()
     return fr
 end
 
@@ -231,10 +228,8 @@ function read_fcgi_records(f)
     if fr == nil then return nil end
     if fr.type == fcgi_types.FCGI_BEGIN_REQUEST then
         local fbr = read_begin_request(fr)
-        --fbr:print()
     elseif fr.type == fcgi_types.FCGI_PARAMS then
         local fp = read_params(fr)
-        --fp:print()
     else
         print("[XX] unknown fcgi record type: " .. fcgi_type_str[fr.type])
         fr:print()
@@ -313,24 +308,6 @@ function handle_fcgi_request(f, handler)
     if (scheme == "http" and port ~= 80) or (scheme == "https" and port ~= 443) then
         port_str = ":" .. port
     end
-
-    -- this should be converted to a Request object
-    print(fp.params.REQUEST_METHOD .. " " .. fp.params.REQUEST_SCHEME .. "://" .. fp.params.HTTP_HOST .. port_str .. fp.params.REQUEST_URI .. " " .. fp.params.SERVER_PROTOCOL)
-
-    print("Host: " .. fp.params.HTTP_HOST)
-    print("User-Agent: " .. fp.params.HTTP_USER_AGENT)
-    print("X-Forwarded-For: " .. fp.params.REMOTE_ADDR)
-    print("Accept-Encoding: " .. fp.params.HTTP_ACCEPT_ENCODING)
-    if fp.params.HTTP_REFERER then
-        print("Referer: " .. fp.params.HTTP_REFERER)
-    end
-    if fp.params.CONTENT_LENGTH and fp.params.CONTENT_LENGTH ~= "" and tonumber(fp.params.CONTENT_LENGTH) > 0 then
-        print("Content-Length: " .. fp.params.CONTENT_LENGTH)
-    end
-    if fp.params.HTTP_CACHE_CONTROL then
-        print("Cache-Control: " .. fp.params.HTTP_CACHE_CONTROL)
-    end
-    print("")
 
     -- Convert the fastcgi data to a Request object
     local request = mt_engine.create_request()
