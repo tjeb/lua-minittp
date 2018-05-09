@@ -333,9 +333,15 @@ function handle_fcgi_request(f, handler)
     request.headers = {}
     -- heeey can we derive these from HTTP_?
     request.headers['Host'] = fp.params.HTTP_HOST
-    request.headers['User-Agent'] = fp.params.HTTP_USER_AGENT
-    request.headers['X-Forwarded-For'] = fp.params.REMOTE_ADDR
-    request.headers['Accept-Encoding'] = fp.params.HTTP_ACCEPT_ENCODING
+    if fp.params.HTTP_USER_AGENT then
+        request.headers['User-Agent'] = fp.params.HTTP_USER_AGENT
+    end
+    if fp.params.REMOTE_ADDR then
+        request.headers['X-Forwarded-For'] = fp.params.REMOTE_ADDR
+    end
+    if fp.params.HTTP_ACCEPT_ENCODING then
+        request.headers['Accept-Encoding'] = fp.params.HTTP_ACCEPT_ENCODING
+    end
     if fp.params.HTTP_REFERER then
         request.headers['Referer'] = fp.params.HTTP_REFERER
     end
