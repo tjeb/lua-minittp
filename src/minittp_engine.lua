@@ -8,12 +8,12 @@
 -- Or the handlers can respond themselves (for instance with chunked
 -- data)
 --
--- TODO: rename this to responder or something?
---
 local mte_M = {}
 
 local mt_util = require 'minittp_util'
 local mt_io = require 'minittp_io'
+local posix = require 'posix'
+local sys_stat = require "posix.sys.stat"
 
 local response = {}
 response.__index = response
@@ -54,7 +54,15 @@ function response.create_standard_headers()
     -- Note: Content-Length will be calculated at the end, if content is set
     headers["Last-Modified"] = get_time_string()
     headers["Connection"] = "close"
+    headers["Cache-Control"] = "max-age: 3600"
+    headers["X-Frame Options"] = "deny"
+    headers["Allow"] = "GET, HEAD"
     return headers
+end
+
+function response:set_cache(maxage)
+    self:set_header("Cache-Control", "max-age: " .. maxage)
+    self:set_header("pragma", nil)
 end
 
 function response:set_header(key, value)
@@ -153,7 +161,6 @@ request.__index = request
 -- and a few additional values:
 -- TODO
 --
-
 function request:parse_query()
     local path = self.query
     local params = nil
@@ -200,7 +207,7 @@ function request.create_from_connection(connection)
     if parts[1] == "GET" then
         vprint("r: " .. line)
         r.query = parts[2]
-        r.path, r.params, err = self:parse_query()
+        r.path, r.params, err = r:parse_query()
         if r.path == nil then return nil, err end
         r.http_version = parts[3]
         local headers, err = request.parse_headers(connection)
@@ -260,39 +267,48 @@ end
 -- with some information but the caller may modify it
 function handle_static_file(request, response, base_path)
     local file_path = request.path
-    if base_path ~= nil then file_path = base_path .. "/" .. file_path end
+    if base_path ~= nil then file_path = base_path .. file_path end
 
     -- TODO remove bad chars from path
     if mt_io.isdir(file_path) then
         file_path = file_path .. "index.html"
     end
-    local fr, err = mt_io.file_reader(file_path)
-    if fr == nil then
+
+    local fstat = sys_stat.stat(file_path)
+    if fstat == nil then
         response:set_status(404, "Not found")
         response.content = err
         return response
     end
+
+    local fr, err = mt_io.file_reader(file_path)
     response:set_header("Content-Type", mt_util.derive_mimetype(file_path))
-    response:set_header("Transfer-Encoding", "chunked")
+    response:set_header("Last-Modified", os.date("%a, %d %b %Y %X %z", fstat.st_mtime))
     response:send_status()
-    response:send_headers()
 
-    local bytes = "dummy", err, code
-    while bytes ~= nil and bytes:len() > 0 do
-        bytes, err, code = posix.read(fr.fd, 4096)
+    -- if below READSIZE bytes, send in one go, otherwise, send chunked
+    local READSIZE = 8192
+    if fstat.st_size < READSIZE then
+        response:set_header("Content-Length", fstat.st_size)
+        bytes, err, code = posix.read(fr.fd, fstat.st_size)
         if bytes ~= nil and bytes:len() > 0 then
-            response:send_chunk(bytes)
+            response.content = bytes
         end
+        return response
+    else
+        response:set_header("Transfer-Encoding", "chunked")
+        response:send_headers()
+        local bytes = "dummy", err, code
+        while bytes ~= nil and bytes:len() > 0 do
+            bytes, err, code = posix.read(fr.fd, READSIZE)
+            if bytes ~= nil and bytes:len() > 0 then
+                response:send_chunk(bytes)
+            end
+        end
+        response:send_chunk("")
+        return nil
     end
-    response:send_chunk("")
-
-    return nil
 end
 mte_M.handle_static_file = handle_static_file
-
-
-
---function request:()
---end
 
 return mte_M

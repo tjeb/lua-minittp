@@ -61,6 +61,7 @@ end
 function send_data(sock, data, data_len)
     if data_len == nil then data_len = data:len() end
 
+    vprint("> " .. data)
 
     local total_sent = 0
     local count, err, sent
