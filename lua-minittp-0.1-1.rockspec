@@ -1,5 +1,5 @@
 package = "lua-minittp"
-version = "0.1-2"
+version = "0.1-1"
 source = {
     url = "git+https://github.com/tjeb/lua-minittp"
 }
@@ -10,6 +10,7 @@ description = {
     ]],
     homepage = "https://github.com/tjeb/lua-minittp",
     license = "GPLv3",
+    maintainer = "Jelte Jansen <minittp@tjeb.nl>",
 }
 dependencies = {
     "copas",
