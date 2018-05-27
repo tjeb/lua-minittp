@@ -1,12 +1,12 @@
 package = "lua-minittp"
-version = "0.1-1"
+version = "0.1-2"
 source = {
     url = "git+https://github.com/tjeb/lua-minittp"
 }
 description = {
     summary = "A minimalistic web framework",
     detailed = [[
-        Work in progress
+        Work in progress.
     ]],
     homepage = "https://github.com/tjeb/lua-minittp",
     license = "GPLv3",
