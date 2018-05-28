@@ -22,8 +22,8 @@ build = {
         minittp = "src/minittp.lua",
         minittp_util = "src/minittp_util.lua",
         minittp_io = "src/minittp_io.lua",
-        minitto_engine = "src/minittp_engine.lua",
-        minitto_fcgi = "src/minittp_fcgi.lua"
+        minittp_engine = "src/minittp_engine.lua",
+        minittp_fcgi = "src/minittp_fcgi.lua"
     },
     install = {
         bin = {
