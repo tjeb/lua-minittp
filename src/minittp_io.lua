@@ -318,7 +318,7 @@ end
 
 function filewriter:open()
   local err
-  self.fd, err = posix.open(self.filename, bit.bor(posix.O_CREAT, posix.O_WRONLY), 600)
+  self.fd, err = posix.open(self.filename, bit.bor(posix.O_CREAT, posix.O_WRONLY, posix.O_TRUNC), "600")
   if self.fd == nil then return nil, err end
   return self
 end

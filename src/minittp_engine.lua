@@ -274,10 +274,14 @@ function handle_static_file(request, response, base_path)
         file_path = file_path .. "index.html"
     end
 
-    local fstat = sys_stat.stat(file_path)
+    local fstat, err = sys_stat.stat(file_path)
     if fstat == nil then
         response:set_status(404, "Not found")
-        response.content = err
+        if err ~= nil then
+            response.content = err
+        else
+            response.content = "Document not found"
+        end
         return response
     end
 
