@@ -314,6 +314,7 @@ function handle_fcgi_request(f, handler)
     request.query = fp.params.REQUEST_SCHEME .. "://" .. fp.params.HTTP_HOST .. port_str .. fp.params.REQUEST_URI
     request.http_version = fp.params.SERVER_PROTOCOL
 
+    request.method = fp.params.REQUEST_METHOD
     request.path = fp.params.SCRIPT_NAME
 
     if fp.params.QUERY_STRING then
@@ -348,8 +349,45 @@ function handle_fcgi_request(f, handler)
     if fp.params.CONTENT_LENGTH and fp.params.CONTENT_LENGTH ~= "" and tonumber(fp.params.CONTENT_LENGTH) > 0 then
         request.headers['Content-Length'] = fp.params.CONTENT_LENGTH
     end
+    if fp.params.HTTP_CONTENT_TYPE then
+        request.headers['Content-Type'] = fp.params.HTTP_CONTENT_TYPE
+    end
     if fp.params.HTTP_CACHE_CONTROL then
         request.headers['Cache-Control'] = fp.params.HTTP_CACHE_CONTROL
+    end
+    
+    -- next fcgi should be type 4 and zero
+    fr = read_fcgi_record(f)
+    if fr.type ~= fcgi_types.FCGI_PARAMS and fr.contentLength ~= 0 then
+        -- error?
+        return nil, "Bad FCI format, expected empty PARAMS"
+    end
+    
+    -- next is optional and might be 5
+    fr = read_fcgi_record(f)
+    local content_data = nil
+    local content_size = 0
+    if fr ~= nil then
+        if fr.type == fcgi_types.FCGI_STDIN then
+            content_size = fr.contentLength
+            content_data = fr.contentData
+        end
+    end
+    if content_size ~= 0 then
+        --TODO validate header size
+	local content_type = request.headers['Content-Type']
+        if content_type == "application/x-www-form-urlencoded" then
+            -- read content
+            if content_data ~= nil then
+                request.post_data = request:parse_query_params(content_data)
+            else
+                request.post_data = {}
+            end
+        elseif content_type == "application/json" then
+            request.post_data = json.decode(content_data)
+        else
+            return nil, "Unsupported content-type for POST: " .. content_type
+        end
     end
 
     -- if the handler sends its own data, we need to make sure the right calls are wrapped into fcgi structures
