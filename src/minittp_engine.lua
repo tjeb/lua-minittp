@@ -14,6 +14,7 @@ local mt_util = require 'minittp_util'
 local mt_io = require 'minittp_io'
 local posix = require 'posix'
 local sys_stat = require "posix.sys.stat"
+local json = require 'json'
 
 local response = {}
 response.__index = response
@@ -56,7 +57,7 @@ function response.create_standard_headers()
     headers["Connection"] = "close"
     headers["Cache-Control"] = "max-age: 3600"
     headers["X-Frame Options"] = "deny"
-    headers["Allow"] = "GET, HEAD"
+    headers["Allow"] = "GET, HEAD, POST"
     return headers
 end
 
@@ -161,6 +162,18 @@ request.__index = request
 -- and a few additional values:
 -- TODO
 --
+function request:parse_query_params(param_string)
+    local params = {}
+    local param_parts = param_string:split("&")
+    for i,p in pairs(param_parts) do
+        local pv = p:split("=")
+        if #pv == 2 then
+            params[pv[1]] = pv[2]
+        end
+    end
+    return params
+end
+
 function request:parse_query()
     local path = self.query
     local params = nil
@@ -170,15 +183,7 @@ function request:parse_query()
         return nil, "Bad query"
     elseif #parts > 1 then
         path = parts[1]
-        -- TODO: split up params further
-        local param_parts = parts[2]:split("&")
-        params = {}
-        for i,p in pairs(param_parts) do
-            local pv = p:split("=")
-            if #pv == 2 then
-                params[pv[1]] = pv[2]
-            end
-        end
+        params = self:parse_query_params(parts[2])
     end
     return path, params
 end
@@ -204,38 +209,67 @@ function request.create_from_connection(connection)
     if line == nil then return nil, err end
 
     local parts = line:split(" ")
+    r.method = parts[1]
+    r.query = parts[2]
+    r.path, r.params, err = r:parse_query()
+    if r.path == nil then return nil, err end
+    r.http_version = parts[3]
+    local headers, err = request.parse_headers(connection)
+    if headers == nil then return nil, err end
+    r.headers = headers
+
+    -- specific header parsing
+    local header_connection = headers['Connection']
+    if header_connection ~= nil then
+        if header_connection == 'keep-alive' then
+            r.keepalive = true
+        else
+            r.keepalive = false
+        end
+    end
+
+    -- If we are behind a proxy, assume X-Forwarded-For has been set
+    -- if not, use the peer name of the socket
+    -- (question/TODO: should we do the same for the other X-Forwarded options?)
+    if headers['X-Forwarded-For'] ~= nil then
+        r.client_address = headers['X-Forwarded-For']
+    else
+        r.client_address = connection:getpeername()
+    end
+    vprint("Peer: " .. r.client_address)
     if parts[1] == "GET" then
         vprint("r: " .. line)
-        r.query = parts[2]
-        r.path, r.params, err = r:parse_query()
-        if r.path == nil then return nil, err end
-        r.http_version = parts[3]
-        local headers, err = request.parse_headers(connection)
-        if headers == nil then return nil, err end
-        r.headers = headers
+    elseif parts[1] == "POST" then
+        -- read out post values; check content-type first; one of:
+        --
+        -- application/x-www-form-urlencoded
+        -- multipart/form-data (not implemented yet)
+        -- application/json?
 
-        -- specific header parsing
-        local header_connection = headers['Connection']
-        if header_connection ~= nil then
-            if header_connection == 'keep-alive' then
-                r.keepalive = true
+        -- depending on type, read/parse them and put them in the request object?
+        local content_type = headers['Content-Type']
+        -- some default if headers is left out
+        if content_type == nil then content_type = "application/x-www-form-urlencoded" end
+        -- fetch the content, regardless of encoding
+        local content_data = nil
+        if headers['Content-Length'] ~= nil then
+            content_data = request.receive_content(r.connection, headers['Content-Length'])
+        end
+
+        if content_type == "application/x-www-form-urlencoded" then
+            -- read content
+            if content_data ~= nil then
+                r.post_data = r:parse_query_params(content_data)
             else
-                r.keepalive = false
+                r.post_data = {}
             end
-        end
-
-        -- If we are behind a proxy, assume X-Forwarded-For has been set
-        -- if not, use the peer name of the socket
-        -- (question/TODO: should we do the same for the other X-Forwarded options?)
-        if headers['X-Forwarded-For'] ~= nil then
-            r.client_address = headers['X-Forwarded-For']
+        elseif content_type == "application/json" then
+            r.post_data = json.decode(content_data)
         else
-            r.client_address = connection:getpeername()
+            return nil, "Unsupported content-type for POST: " .. content_type
         end
-        vprint("Peer: " .. r.client_address)
-
     else
-        return nil, "Unsupported command: " .. line
+        return nil, "Unsupported HTTP command: " .. line
     end
     return r
 end
@@ -257,6 +291,15 @@ function request.parse_headers(connection)
         line = connection:receive()
     end
     return headers
+end
+
+function request.receive_content(connection, size)
+    local content, err = connection:receive(size)
+    if content == nil then
+        return nil, err
+    else
+        return content
+    end
 end
 
 
