@@ -4,6 +4,7 @@
 
 local mt_engine = require 'minittp_engine'
 local copas = require 'copas'
+local json = require 'json'
 
 local _M = {}
 
@@ -287,6 +288,33 @@ function create_cwrap(c)
     return cw
 end
 
+function create_wrapped_response(s, request)
+    local c_wrap = create_cwrap(s)
+    local response = mt_engine.create_response(c_wrap, request)
+    -- Specific handling for status code in fastcgi mode
+    local orig_set_status = response.set_status
+    response.set_status =
+        function(self, code, message)
+            self:set_header("Status", code)
+            orig_set_status(self, code, message)
+        end
+    return response
+end
+
+--
+-- fcgi has a slightly different connection handling setup,
+-- so we can't use the standard copas error handler
+-- This provides the one to use
+function copas_error_handler(err, cor, skt)
+    response = create_wrapped_response(skt)
+    response:set_status(500, "Internal Server Error")
+    response.content = err
+    response:send_status()
+    response:send_headers()
+    response:send_content()
+end
+_M.copas_error_handler = copas_error_handler
+
 function handle_fcgi_request(f, handler)
     -- should start with BEGIN_REQUEST
 
@@ -391,12 +419,11 @@ function handle_fcgi_request(f, handler)
     end
 
     -- if the handler sends its own data, we need to make sure the right calls are wrapped into fcgi structures
-    local c_wrap = create_cwrap(f)
-    local response = mt_engine.create_response(c_wrap, request)
+    local response = create_wrapped_response(f, request)
 
     -- sending chunks is now a normal send of the wrapper;
     -- no need to use the chunked transmission protocol ourselves
-    response.send_chunk = c_wrap.send
+    response.send_chunk = response.connection.send
 
     -- (we could make it more efficient by having the other standard send
     -- calls wrapped as well, btw, but those need special handling)

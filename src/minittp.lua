@@ -178,6 +178,7 @@ function handle_fastcgi(c)
     local result = nil
     local err = nil
 
+    copas.setErrorHandler(mt_fcgi.copas_error_handler)
     result, err = mt_fcgi.handle_fcgi_request(c, script)
     if result == nil then print("[XX] error in fcgi (attempt ".. count .. "): " .. err) end
 end
