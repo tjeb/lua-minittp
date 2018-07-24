@@ -144,17 +144,19 @@ function errorhandle(err, cor, skt)
 end
 
 function handle_connection(c)
-    c = copas.wrap(c)
+    wc = copas.wrap(c)
     copas.setErrorHandler(errorhandle)
     local keepalive = true
     while keepalive do
-        request, err = mt_engine.create_request_from_connection(c)
+        request, err = mt_engine.create_request_from_connection(wc)
+        request.raw_sock = c
         if request == nil then print("Client error: " .. err)
             -- TODO: send bad request response
             if err == "closed" then keepalive = false end
         else
             -- Create a default response object
-            local response = mt_engine.create_response(c, request)
+            local response = mt_engine.create_response(wc, request)
+            response.raw_sock = c
             vprint("Calling request handler from script")
             response = script:handle_request(request, response)
             if response ~= nil then
@@ -203,9 +205,9 @@ function run()
 
     -- fire it up
     if fastcgi then
-        copas.addserver(s, handle_fastcgi)
+        copas.addserver(s, handle_fastcgi, 100)
     else
-        copas.addserver(s, handle_connection)
+        copas.addserver(s, handle_connection, 100)
     end
 
     -- initial setup, load templates, etc.

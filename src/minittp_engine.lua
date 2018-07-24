@@ -57,7 +57,7 @@ function response.create_standard_headers()
     headers["Connection"] = "close"
     headers["Cache-Control"] = "max-age: 3600"
     headers["X-Frame Options"] = "deny"
-    headers["Allow"] = "GET, HEAD, POST"
+    headers["Allow"] = "OPTIONS, GET, HEAD, POST"
     return headers
 end
 
@@ -204,9 +204,10 @@ function request.create_from_connection(connection)
     local r = request.create()
     r.connection = connection
 
-    -- first line must be a GET (for now)
     local line, err = connection:receive()
     if line == nil then return nil, err end
+
+    r.http_line = line
 
     local parts = line:split(" ")
     r.method = parts[1]
@@ -268,6 +269,8 @@ function request.create_from_connection(connection)
         else
             return nil, "Unsupported content-type for POST: " .. content_type
         end
+    elseif parts[1] == "OPTIONS" or parts[1] == "HEAD" then
+        -- do we need to do anything here?
     else
         return nil, "Unsupported HTTP command: " .. line
     end
