@@ -162,7 +162,10 @@ function handle_connection(c)
             if response ~= nil then
                 response:send_status()
                 response:send_headers()
-                response:send_content()
+                -- if request method was HEAD, don't send the content
+                if request.method ~= 'HEAD' then
+                    response:send_content()
+                end
             end
             if response == nil or not response.keepalive then
                 -- read another request

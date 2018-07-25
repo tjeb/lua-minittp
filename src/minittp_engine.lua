@@ -188,8 +188,6 @@ function request:parse_query()
     return path, params
 end
 
-
-
 function request.create(connection)
     local r = {}
     setmetatable(r, request)
@@ -336,6 +334,12 @@ function handle_static_file(request, response, base_path)
     response:set_header("Last-Modified", os.date("%a, %d %b %Y %X %z", fstat.st_mtime))
     response:send_status()
 
+    -- if this was just a HEAD request, set the header, set empty content, and return
+    if request.method == 'HEAD' then
+        response:set_header("Content-Length", fstat.st_size)
+        response.content = ""
+        return response
+    end
     -- if below READSIZE bytes, send in one go, otherwise, send chunked
     local READSIZE = 8192
     if fstat.st_size < READSIZE then

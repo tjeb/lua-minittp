@@ -403,7 +403,7 @@ function handle_fcgi_request(f, handler)
     end
     if content_size ~= 0 then
         --TODO validate header size
-	local content_type = request.headers['Content-Type']
+        local content_type = request.headers['Content-Type']
         if content_type == "application/x-www-form-urlencoded" then
             -- read content
             if content_data ~= nil then
@@ -435,7 +435,10 @@ function handle_fcgi_request(f, handler)
     if response ~= nil then
         response:send_status()
         response:send_headers()
-        response:send_content()
+        -- only send the content if request method is not HEAD
+        if request.method ~= 'HEAD' then
+            response:send_content()
+        end
     end
 
     -- depending on params of fcgi server, we may need to keep the connection open
