@@ -53,7 +53,7 @@ function response.create_standard_headers()
     headers["Date"] = get_time_string()
     headers["Content-Type"] = "text/html"
     -- Note: Content-Length will be calculated at the end, if content is set
-    headers["Last-Modified"] = get_time_string()
+    --headers["Last-Modified"] = get_time_string()
     headers["Connection"] = "close"
     headers["Cache-Control"] = "max-age: 3600"
     headers["X-Frame Options"] = "deny"
