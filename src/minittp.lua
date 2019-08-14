@@ -84,7 +84,7 @@ function parse_args(args)
     local host = "127.0.0.1"
     local script_args = nil
     skip = false
-    for i = 1,table.getn(args) do
+    for i = 1,#args do
         if skip then
             skip = false
         elseif args[i] == "-a" then
@@ -103,7 +103,7 @@ function parse_args(args)
             skip = true
         elseif args[i] == "-s" then
             script_args = {}
-            for j = i+1,table.getn(args) do
+            for j = i+1,#args do
                 table.insert(script_args, arg[j])
             end
             break
@@ -111,7 +111,7 @@ function parse_args(args)
             verbose = true
         else
             if script_to_run == nil then script_to_run = args[i]
-            else help(1, "Too many arguments at " .. table.getn(args))
+            else help(1, "Too many arguments at " .. #args)
             end
         end
     end

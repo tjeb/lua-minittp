@@ -283,7 +283,7 @@ function request.parse_headers(connection)
     while line ~= nil and line:trim() ~= "" do
         vprint("< " .. line)
         local hparts = line:split(":", true)
-        if table.getn(hparts) > 1 then
+        if #hparts > 1 then
             headers[hparts[1]] = table.concat(hparts, ":", 2)
             header_count = header_count + 1
         else

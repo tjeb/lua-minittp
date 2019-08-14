@@ -131,7 +131,7 @@ end
 
 local function strjoin(delimiter, list)
    local len = 0
-   if list then len = table.getn(list) end
+   if list then len = #list end
    if len == 0 then
       return ""
    elseif len == 1 then
