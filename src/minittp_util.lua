@@ -1,7 +1,6 @@
 --
 -- some helper functions
 --
-
 local minittp_util = {}
 
 minittp_util.MINITTP_VERSION = "0.1.0"
@@ -68,10 +67,14 @@ function send_data(sock, data, data_len)
     while total_sent < data_len do
         count, err, sent = sock:send(data, total_sent+1, data_len - total_sent)
         -- TODO: check for EAGAIN here?
-        if count == nil then return nil, err, sent end
+        if count == nil then
+            return nil, err, sent
+        end
         -- We may have sent a partial message
         total_sent = total_sent + count
-        if total_sent == data_len then return total_sent end
+        if total_sent == data_len then
+            return total_sent
+        end
     end
 end
 minittp_util.send_data = send_data

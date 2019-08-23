@@ -145,18 +145,25 @@ function errorhandle(err, cor, skt)
     response:send_status()
     response:send_headers()
     response:send_content()
+    response.raw_sock:close()
 end
 
+local conn_count = 0
+local connnr = 0
 function handle_connection(c)
     wc = copas.wrap(c)
     copas.setErrorHandler(errorhandle)
     local keepalive = true
     while keepalive do
-        request, err = mt_engine.create_request_from_connection(wc)
+        local request, err = mt_engine.create_request_from_connection(wc)
         if request == nil then
-            print("Client error: " .. err)
             -- TODO: send bad request response
-            if err == "closed" then keepalive = false end
+            if err == "closed" then
+                keepalive = false
+                break
+            else
+                print("Client error: " .. err)
+            end
         else
             -- Create a default response object
             request.raw_sock = c
@@ -209,7 +216,7 @@ function run()
     s = assert(socket.bind(host, port))
     i, p   = s:getsockname()
     assert(i, p)
-    vprint("Waiting connection from client on " .. i .. ":" .. p .. "...")
+    vprint("XX Waiting connection from client on " .. i .. ":" .. p .. "...")
 
     -- fire it up
     if fastcgi then

@@ -338,6 +338,7 @@ function handle_static_file(request, response, base_path)
     if request.method == 'HEAD' then
         response:set_header("Content-Length", fstat.st_size)
         response.content = ""
+        fr:close()
         return response
     end
     -- if below READSIZE bytes, send in one go, otherwise, send chunked
@@ -348,6 +349,7 @@ function handle_static_file(request, response, base_path)
         if bytes ~= nil and bytes:len() > 0 then
             response.content = bytes
         end
+        fr:close()
         return response
     else
         response:set_header("Transfer-Encoding", "chunked")
@@ -360,6 +362,8 @@ function handle_static_file(request, response, base_path)
             end
         end
         response:send_chunk("")
+        fr:close()
+        request.raw_sock:close()
         return nil
     end
 end
