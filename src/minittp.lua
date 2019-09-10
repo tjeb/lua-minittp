@@ -149,12 +149,13 @@ function handle_connection(c)
     local keepalive = true
     while keepalive do
         request, err = mt_engine.create_request_from_connection(wc)
-        request.raw_sock = c
-        if request == nil then print("Client error: " .. err)
+        if request == nil then
+            print("Client error: " .. err)
             -- TODO: send bad request response
             if err == "closed" then keepalive = false end
         else
             -- Create a default response object
+            request.raw_sock = c
             local response = mt_engine.create_response(wc, request)
             response.raw_sock = c
             vprint("Calling request handler from script")
