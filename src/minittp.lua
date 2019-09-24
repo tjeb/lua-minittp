@@ -67,6 +67,7 @@ function help(rcode, msg)
     print("Options:")
     print("-a <host ip> IP address to listen on, defaults to 127.0.0.1")
     print("-p <port number> The port number to listen on, defaults to 8080")
+    print("-c Close all connections regardless of keep-alive headers from clients")
     print("-f Run in FastCGI mode")
     print("-i store the process id in /var/minittp-server.pid (if it can be written to)")
     print("-v verbose output")
@@ -83,6 +84,7 @@ function parse_args(args)
     local port = 8080
     local host = "127.0.0.1"
     local script_args = nil
+    local close_connections = false
     skip = false
     for i = 1,#args do
         if skip then
@@ -91,6 +93,8 @@ function parse_args(args)
             host = args[i+1]
             if host == nil then help(1, "missing argument for -a") end
             skip = true
+        elseif args[i] == "-c" then
+            close_connections = true
         elseif args[i] == "-f" then
             fastcgi = true
         elseif args[i] == "-h" then
@@ -118,7 +122,7 @@ function parse_args(args)
     if script_to_run == nil then
         help(1, "Missing arguments")
     end
-    return store_process_id, fastcgi, script_to_run, host, port, script_args
+    return store_process_id, close_connections, fastcgi, script_to_run, host, port, script_args
 end
 
 function get_time_string()
@@ -168,8 +172,8 @@ function handle_connection(c)
                     response:send_content()
                 end
             end
-            if response == nil or not response.keepalive then
-                -- read another request
+            if response == nil or not response.keepalive or close_connections then
+                -- Do not read another request
                 keepalive = false
             end
         end
@@ -191,7 +195,7 @@ end
 
 function run()
     -- Load the handler script and call its initialization
-    store_process_id, fastcgi, script_to_run, host, port, script_args = parse_args(arg)
+    store_process_id, close_connections, fastcgi, script_to_run, host, port, script_args = parse_args(arg)
     script = dofile(script_to_run)
 
     local r, err = script:init(script_args)
