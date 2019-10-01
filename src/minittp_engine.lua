@@ -363,7 +363,6 @@ function handle_static_file(request, response, base_path)
         end
         response:send_chunk("")
         fr:close()
-        request.raw_sock:close()
         return nil
     end
 end

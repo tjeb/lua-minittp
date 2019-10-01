@@ -145,7 +145,6 @@ function errorhandle(err, cor, skt)
     response:send_status()
     response:send_headers()
     response:send_content()
-    response.raw_sock:close()
 end
 
 local conn_count = 0
@@ -156,6 +155,9 @@ function handle_connection(c)
     local keepalive = true
     while keepalive do
         local request, err = mt_engine.create_request_from_connection(wc)
+        if close_connections then
+            request.keepalive = false
+        end
         if request == nil then
             -- TODO: send bad request response
             if err == "closed" then
@@ -179,15 +181,12 @@ function handle_connection(c)
                     response:send_content()
                 end
             end
-            if response == nil or not response.keepalive or close_connections then
+            if response == nil or not response.keepalive then
                 -- Do not read another request
                 keepalive = false
             end
         end
     end
-    -- if the client did not close, we will
-    -- if this errors, ignore it.
-    pcall(c.close, c)
 end
 
 function handle_fastcgi(c)
