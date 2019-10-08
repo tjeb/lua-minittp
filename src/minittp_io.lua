@@ -222,7 +222,9 @@ function subprocess:wait()
 end
 
 function subprocess:kill()
-  posix.kill(self.pid)
+  if self.pid ~= nil then
+    posix.kill(self.pid)
+  end
 end
 
 function subprocess:close()
