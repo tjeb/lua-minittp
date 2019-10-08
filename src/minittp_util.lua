@@ -3,7 +3,7 @@
 --
 local minittp_util = {}
 
-minittp_util.MINITTP_VERSION = "0.1.0"
+minittp_util.MINITTP_VERSION = "0.4.3"
 
 function tabledump(t)
     for i, e in pairs(t) do

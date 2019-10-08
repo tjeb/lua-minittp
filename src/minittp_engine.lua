@@ -353,6 +353,7 @@ function handle_static_file(request, response, base_path)
         return response
     else
         response:set_header("Transfer-Encoding", "chunked")
+        response:set_header("Connection", "close")
         response:send_headers()
         local bytes = "dummy", err, code
         while bytes ~= nil and bytes:len() > 0 do

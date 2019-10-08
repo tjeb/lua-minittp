@@ -175,6 +175,9 @@ function handle_connection(c)
             response = script:handle_request(request, response)
             if response ~= nil then
                 response:send_status()
+                if close_connections then
+                    response:set_header("Connection", "close")
+                end
                 response:send_headers()
                 -- if request method was HEAD, don't send the content
                 if request.method ~= 'HEAD' then
@@ -182,10 +185,18 @@ function handle_connection(c)
                 end
             end
             if response == nil or not response.keepalive then
-                -- Do not read another request
+                -- Do not read another request; the connectection has
+                -- either been taken over by the client, or keepalive
+                -- was set to false
                 keepalive = false
             end
         end
+    end
+
+    if response ~= nil then
+        -- connection has not been taken over by handler,
+        -- and there are no more requests on the socket, so close it
+        wc:close()
     end
 end
 
