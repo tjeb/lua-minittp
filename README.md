@@ -1,3 +1,7 @@
+# Repository archived
+
+I never got the asynchronous part running reliably in lua, have not used or worked on this library for quite some time now, and have no plans to do so in the near feature. I'll leave it archived in case someone finds it useful as a starting point for another attempt.
+
 # lua-minittp
 Extremely minimalistic web framework
 
